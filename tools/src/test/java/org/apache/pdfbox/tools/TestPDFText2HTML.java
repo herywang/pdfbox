@@ -16,13 +16,7 @@
  */
 package org.apache.pdfbox.tools;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -32,16 +26,26 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
-class TestPDFText2HTML
-{
-    private PDDocument createDocument(String title, PDFont font, String text) throws IOException
-    {
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class TestPDFText2HTML {
+    private PDDocument createDocument(String title, PDFont font, String text) throws IOException {
         PDDocument doc = new PDDocument();
         doc.getDocumentInformation().setTitle(title);
         PDPage page = new PDPage();
         doc.addPage(page);
-        try (PDPageContentStream contentStream = new PDPageContentStream(doc, page))
-        {
+        try (PDPageContentStream contentStream = new PDPageContentStream(doc, page)) {
             contentStream.beginText();
             contentStream.setFont(font, 12);
             contentStream.newLineAtOffset(100, 700);
@@ -52,13 +56,12 @@ class TestPDFText2HTML
     }
 
     @Test
-    void testEscapeTitle() throws IOException
-    {
+    void testEscapeTitle() throws IOException {
         PDFTextStripper stripper = new PDFText2HTML();
         PDDocument doc = createDocument("<script>\u3042", new PDType1Font(FontName.HELVETICA),
                 "<foo>");
         String text = stripper.getText(doc);
-       
+
         Matcher m = Pattern.compile("<title>(.*?)</title>").matcher(text);
         assertTrue(m.find());
         assertEquals("&lt;script&gt;&#12354;", m.group(1));
@@ -66,8 +69,7 @@ class TestPDFText2HTML
     }
 
     @Test
-    void testStyle() throws IOException
-    {
+    void testStyle() throws IOException {
         PDFTextStripper stripper = new PDFText2HTML();
         PDDocument doc = createDocument("t", new PDType1Font(FontName.HELVETICA_BOLD), "<bold>");
         String text = stripper.getText(doc);
@@ -75,5 +77,21 @@ class TestPDFText2HTML
         Matcher bodyMatcher = Pattern.compile("<p>(.*?)</p>").matcher(text);
         assertTrue(bodyMatcher.find(), "body p exists");
         assertEquals("<b>&lt;bold&gt;</b>", bodyMatcher.group(1), "body p");
+    }
+
+    @Test
+    void test2Html() throws Exception {
+        PDDocument doc = Loader.loadPDF(new File("/Users/wangheng/Documents/_test_gld/练习文档-总体概述.pdf"));
+
+        PDFTextStripper textStripper = new PDFText2HTML();
+        String text = textStripper.getText(doc);
+
+        OutputStreamWriter outputStreamWriter = new OutputStreamWriter(
+                Files.newOutputStream(Paths.get("/Users/wangheng/Documents/_test_gld/练习文档-总体概述.html")),
+                StandardCharsets.UTF_8);
+        outputStreamWriter.write(text);
+
+        doc.close();
+        outputStreamWriter.close();
     }
 }
