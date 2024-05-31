@@ -63,7 +63,7 @@ public class SetGraphicsStateParameters extends OperatorProcessor
         PDExtendedGraphicsState gs = context.getResources().getExtGState(graphicsName);
         if (gs == null)
         {
-            LOG.error("name for 'gs' operator not found in resources: /{}", graphicsName.getName());
+            LOG.warn("name for 'gs' operator not found in resources: /{}", graphicsName.getName());
             return;
         }
         gs.copyIntoGraphicsState( context.getGraphicsState() );

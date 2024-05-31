@@ -81,6 +81,10 @@ public class CFFParser
         this.source = source;
         return parse(new DataInputByteArray(bytes));
     }
+
+    public List<CFFFont> parse(byte[] bytes) throws IOException{
+        return parse(new DataInputByteArray(bytes));
+    }
     
     /**
      * Parse CFF font using a RandomAccessRead as input.

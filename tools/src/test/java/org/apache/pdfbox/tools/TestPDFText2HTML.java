@@ -19,10 +19,17 @@ package org.apache.pdfbox.tools;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -75,5 +82,47 @@ class TestPDFText2HTML
         Matcher bodyMatcher = Pattern.compile("<p>(.*?)</p>").matcher(text);
         assertTrue(bodyMatcher.find(), "body p exists");
         assertEquals("<b>&lt;bold&gt;</b>", bodyMatcher.group(1), "body p");
+    }
+
+    @Test
+    void test2Html() throws Exception {
+        PDDocument doc = Loader.loadPDF(new File("/Users/wangheng/Documents/_广联达_测试标书/练习文档-总体概述.pdf"));
+
+        PDFTextStripper textStripper = new PDFText2HTML();
+        String text = textStripper.getText(doc);
+
+        OutputStreamWriter outputStreamWriter = new OutputStreamWriter(
+                Files.newOutputStream(Paths.get("/Users/wangheng/Documents/_广联达_测试标书/练习文档-总体概述.html")),
+                StandardCharsets.UTF_8);
+        outputStreamWriter.write(text);
+
+        doc.close();
+        outputStreamWriter.close();
+    }
+
+    @Test
+    void testPDF2HTML() throws Exception{
+        PDDocument doc = Loader.loadPDF(new File("/Users/wangheng/Documents/_广联达_测试标书/练习文档-总体概述.pdf"));
+        PDF2HTML pdf2html = new PDF2HTML("练习文档-总体概述");
+        FileWriter fileWriter = new FileWriter("/Users/wangheng/Documents/_广联达_测试标书/练习文档-总体概述.html");
+        long l = System.currentTimeMillis();
+        pdf2html.writeText(doc, fileWriter);
+        fileWriter.close();
+        System.out.println(System.currentTimeMillis() - l);
+//        String text = pdf2html.getText(doc);
+//        System.out.println(text);
+    }
+
+    @Test
+    void testPDF2HTML2() throws Exception{
+        PDDocument doc = Loader.loadPDF(new File("/Users/wangheng/Documents/_广联达_测试标书/b.pdf"));
+        PDF2HTML pdf2html = new PDF2HTML("练习文档-总体概述");
+        FileWriter fileWriter = new FileWriter("/Users/wangheng/Documents/_广联达_测试标书/b.html");
+        long l = System.currentTimeMillis();
+        pdf2html.writeText(doc, fileWriter);
+        fileWriter.close();
+        System.out.println(System.currentTimeMillis() - l);
+//        String text = pdf2html.getText(doc);
+//        System.out.println(text);
     }
 }

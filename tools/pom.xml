@@ -53,6 +53,21 @@
       <artifactId>picocli</artifactId>
       <version>${picocli.version}</version>
     </dependency>
+      <dependency>
+          <groupId>net.mabboud.fontverter</groupId>
+          <artifactId>FontVerter</artifactId>
+          <version>1.2.22</version>
+          <exclusions>
+              <exclusion>
+                  <artifactId>pdfbox</artifactId>
+                  <groupId>org.apache.pdfbox</groupId>
+              </exclusion>
+              <exclusion>
+                  <artifactId>com.google.guava</artifactId>
+                  <groupId>guava</groupId>
+              </exclusion>
+          </exclusions>
+      </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
