@@ -8,8 +8,9 @@ import org.apache.pdfbox.text.TextPosition;
 import java.io.IOException;
 
 public class TextMetrics {
-    private float x, baseline, width, height, pointSize, descent, ascent, fontSize;
+    private float x, baseline, width, height, pointSize, descent, ascent, fontSize, currentTextWidth;
     private PDFont font;
+    private boolean isNewLine = false;
 
     public TextMetrics(TextPosition tp) {
         x = tp.getX();
@@ -21,13 +22,18 @@ public class TextMetrics {
         fontSize = tp.getYScale();
         ascent = getAscent();
         descent = getDescent();
+        this.isNewLine = false;
+        this.currentTextWidth = tp.getWidth();
     }
 
     public void append(TextPosition tp) {
-        width += tp.getX() - (x + width) + tp.getWidth();
+        if(!isNewLine){
+            width += tp.getX() - (x + width) + tp.getWidth();
+        }
         height = Math.max(height, tp.getHeight());
         ascent = Math.max(ascent, getAscent(tp.getFont(), tp.getYScale()));
         descent = Math.min(descent, getDescent(tp.getFont(), tp.getYScale()));
+        this.currentTextWidth = tp.getWidth();
     }
 
     public float getX() {
@@ -40,6 +46,18 @@ public class TextMetrics {
         } else {
             return baseline - getBoundingBoxAscent();
         }
+    }
+
+    public boolean isNewLine() {
+        return isNewLine;
+    }
+
+    public void setHeight(float height) {
+        this.height = height;
+    }
+
+    public void setNewLine(boolean newLine) {
+        isNewLine = newLine;
     }
 
     public float getBottom() {
@@ -108,12 +126,17 @@ public class TextMetrics {
     }
 
     public float getWidth() {
-        return width;
+        return width + this.currentTextWidth;
     }
 
     public float getHeight() {
+        if(isNewLine){
+            return this.height;
+        }
         return getBottom() - getTop();
     }
+
+
 
     public float getPointSize() {
         return pointSize;

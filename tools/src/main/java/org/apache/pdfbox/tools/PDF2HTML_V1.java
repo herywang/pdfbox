@@ -1,5 +1,6 @@
 package org.apache.pdfbox.tools;
 
+import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -31,29 +32,34 @@ import org.apache.pdfbox.tools.dom.TextMetrics;
 import org.apache.pdfbox.util.Matrix;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
+import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * @author wangheng
  * @date 2024/5/29
- * PDF to HTML with style
+ *         PDF to HTML with style
  */
-public class PDF2HTML extends PDFTextStripper {
+public class PDF2HTML_V1 extends PDFTextStripper {
 
     private static final Logger LOG = LogManager.getLogger(ExtractText.class);
     private static final Set<String> END_SEQ_TAGS = new HashSet<String>();
-
+    private static final Set<String> SPECIAL_CHARACTER = ImmutableSet.of("“", "”");
     static {
         END_SEQ_TAGS.add("!");
         END_SEQ_TAGS.add("?");
@@ -61,6 +67,7 @@ public class PDF2HTML extends PDFTextStripper {
         END_SEQ_TAGS.add(";");
         END_SEQ_TAGS.add("；");
     }
+
 
     private final String fileName;
 
@@ -79,6 +86,8 @@ public class PDF2HTML extends PDFTextStripper {
     private StringBuilder textLine = new StringBuilder();
     private BoxStyle style = new BoxStyle("pt");
     private TextMetrics textMetrics = null;
+    private String baseImageSrc = null;
+    private int imageIndex = 0;
 
     // ***************** PDF绘制线条所用的对象 ********************
     private float line_position_x = 0;
@@ -87,12 +96,13 @@ public class PDF2HTML extends PDFTextStripper {
     private float start_y = 0;
     private List<PathEntity> pathEntities = new ArrayList<>();
 
-    public PDF2HTML(String fileName) {
+    public PDF2HTML_V1(String fileName) {
         super();
         addOperator(new SetFontAndSize(this));
         addOperator(new SetLineWidth(this));
         this.fileName = fileName;
     }
+
 
     /**
      * This method is available for subclasses of this class. It will be called before processing of the document start.
@@ -109,7 +119,8 @@ public class PDF2HTML extends PDFTextStripper {
                 "<style type=\"text/css\">\n" +
                 ".page{" +
                 "position:relative;margin:0.5em;" +
-                "box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2), 10px 10px 20px rgba(0, 0, 0, 0.2),15px 15px 30px rgba(0, 0, 0, 0.2);" +
+                "box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2), 10px 10px 20px rgba(0, 0, 0, 0.2),15px 15px 30px rgba(0, 0, 0, 0.2);"
+                +
                 "margin-bottom:16px;}\n" +
                 ".p{position:absolute;white-space:pre-wrap;border:1px solid blue;border-radius:3px;}\n" +
                 ".l{position:absolute;}\n" +
@@ -201,37 +212,18 @@ public class PDF2HTML extends PDFTextStripper {
             float maxHeight = Math.max(lastText.getHeight(), text.getHeight());
             if (tolerance > maxHeight) {
                 // current text has not same y position with pre-text, so we need to judge
-                // 不在同一行,判断是否需要与上一行的最后一个字符进行连句
-                float rightSpace = currentPageWidth - (lastText.getX() + lastText.getWidth());
-                float leftSpace = text.getX();
-                if (!Objects.equals(lastText.getUnicode(), " ") &&
-                        Math.abs(rightSpace - leftSpace) < Math.max(lastText.getWidth() * 1.5, text.getWidth() * 1.5)) {
-                    // 需要连接
-                    if (this.textMetrics == null) {
-                        this.paragraphStartText = text;
-                        this.textMetrics = new TextMetrics(text);
-                    }
-                    if (currentLineStartText == null) {
-                        currentLineStartText = text;
-                    }
-                    // set current state as new line, but not split to multi-div line.
-                    this.textMetrics.setNewLine(true);
-                    // set line space.
-                    this.textMetrics.setHeight(Math.abs(text.getY() - lastText.getY()));
-                } else {
-                    // 断句
-                    endSequence();
-                }
+                // 断句
+                endSequence();
             } else {
                 // 在同一行, 判断两个字符之间的空白符号数量
                 float space = Math.abs(text.getX() - (lastText.getX() + lastText.getWidth())) /
                         ((lastText.getWidth() + text.getWidth()) / 2);
-                textLine.append("    ".repeat(Math.max(0, (int) space)));
+                // textLine.append("   ".repeat(Math.max(0, (int) space)));
                 if (space > maxHeight) {
                     endSequence();
                 }
             }
-        }else{
+        } else {
             this.currentLineStartText = text;
         }
         // 统计本行文本宽度
@@ -243,6 +235,9 @@ public class PDF2HTML extends PDFTextStripper {
         }
         updateStyle(text);
         String unicodeText = text.getUnicode();
+        if(SPECIAL_CHARACTER.contains(unicodeText)){
+            unicodeText = " " + unicodeText + " ";
+        }
         textLine.append(unicodeText);
         lastText = text;
     }
@@ -317,7 +312,7 @@ public class PDF2HTML extends PDFTextStripper {
             // 绘制图像
             COSName objectName = (COSName) operands.get(0);
             PDXObject xObject = getResources().getXObject(objectName);
-            try (ByteArrayOutputStream outputImageByteStream = new ByteArrayOutputStream()) {
+            try {
                 if (xObject instanceof PDImageXObject) {
                     PDImageXObject image = (PDImageXObject) xObject;
                     BufferedImage imageBuffer = image.getImage();
@@ -327,7 +322,8 @@ public class PDF2HTML extends PDFTextStripper {
                     Rectangle bounds = image.getImage().getRaster().getBounds();
 
                     // 将自身的变换矩阵，转换成仿射变化矩阵
-                    AffineTransform affineTransform = new AffineTransform(currentTransformationMatrix.createAffineTransform());
+                    AffineTransform affineTransform = new AffineTransform(
+                            currentTransformationMatrix.createAffineTransform());
                     // 反转y轴坐标，因为PDF页面中坐标是从左下角开始的，而图像中坐标是从左上角开始的
                     affineTransform.scale(1.0 / image.getWidth(), -1.0 / image.getHeight());
                     affineTransform.translate(0, -image.getHeight());
@@ -341,19 +337,26 @@ public class PDF2HTML extends PDFTextStripper {
                     float positionY = (float) imageBounds.getY();
                     float width = (float) imageBounds.getWidth();
                     float height = (float) imageBounds.getHeight();
-                    System.out.println("Image format name: " + formatName);
                     if (formatName == null || formatName.isEmpty()) {
                         System.out.println("unknow image format in PDF");
                     } else {
-                        ImageIO.write(imageBuffer, formatName, outputImageByteStream);
-                        String base64Image = Base64.getEncoder().encodeToString(outputImageByteStream.toByteArray());
-                        String imageElement = createImageElement(base64Image, formatName, positionX, positionY, width, height);
+                        // ImageIO.write(imageBuffer, formatName, outputImageByteStream);
+                        String fileName = Thread.currentThread().getId() + "-" + imageIndex + "." + formatName;
+                        try(FileOutputStream fileOutputStream = new FileOutputStream(this.baseImageSrc + "/" + fileName)){
+                            ImageIO.write(imageBuffer, formatName, fileOutputStream);
+                        }
+                        imageIndex++;
+                        imageBuffer.flush();
+                        // String base64Image = Base64.getEncoder().encodeToString(outputImageByteStream.toByteArray());
+                        // String imageElement = createImageElement(base64Image, formatName, positionX, positionY, width,
+                        //         height);
+                        String imageElement = createImageElement(fileName, positionX, positionY, width, height);
                         output.write(imageElement);
-                        System.out.println("获取到图像");
                     }
                 }
+            }catch (Exception e){
+                System.out.println("解析出现异常！" + e);
             }
-
         }
         super.processOperator(operator, operands);
     }
@@ -367,6 +370,14 @@ public class PDF2HTML extends PDFTextStripper {
         return imageEle.toString();
     }
 
+    private String createImageElement(String src, float x, float y, float width, float height) {
+        StringBuilder imageEle = new StringBuilder("<img src=\"./image/" + src);
+        imageEle.append("\" style=\"position:absolute;left:").append(x).append("pt;")
+                .append("top:").append(y).append("pt;")
+                .append("width:").append(width).append("pt;")
+                .append("height:").append(height).append("pt;\"/>");
+        return imageEle.toString();
+    }
     /**
      * end sequence
      */
@@ -392,10 +403,10 @@ public class PDF2HTML extends PDFTextStripper {
                 }
                 // StringBuilder sb = new StringBuilder();
                 // sb.append("    ".repeat(Math.max(0, spaceCount)));
-                if(this.paragraphStartText != null){
+                if (this.paragraphStartText != null) {
                     float width = this.textMetrics.getWidth() + this.lastText.getWidth() * spaceCount * 4;
                     this.style.setWidth(width);
-                }else{
+                } else {
                     this.style.setWidth(this.textMetrics.getWidth());
                 }
                 output.write("<div class=\"p\" style=\"" + style.toString() + "\">" + textLine + "</div>");
@@ -489,5 +500,13 @@ public class PDF2HTML extends PDFTextStripper {
                 LOG.warn("更新字体表出现异常！", e);
             }
         });
+    }
+
+    public void setBaseImageSrc(String baseImageSrc) {
+        this.baseImageSrc = baseImageSrc;
+        File file = new File(baseImageSrc);
+        if(!file.exists()){
+            file.mkdirs();
+        }
     }
 }
