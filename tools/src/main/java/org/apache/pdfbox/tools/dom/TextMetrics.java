@@ -8,7 +8,16 @@ import org.apache.pdfbox.text.TextPosition;
 import java.io.IOException;
 
 public class TextMetrics {
-    private float x, baseline, width, height, pointSize, descent, ascent, fontSize, currentTextWidth;
+
+    /**
+     * 段落开始文字的 x坐标
+     */
+    private float x;
+    /**
+     * 上一个文字对象信息
+     */
+    private TextPosition preText;
+    private float baseline, width, height, pointSize, descent, ascent, fontSize, currentTextWidth;
     private PDFont font;
     private boolean isNewLine = false;
 
@@ -23,21 +32,30 @@ public class TextMetrics {
         ascent = getAscent();
         descent = getDescent();
         this.isNewLine = false;
+        this.preText = tp;
         this.currentTextWidth = tp.getWidth();
     }
 
     public void append(TextPosition tp) {
         if(!isNewLine){
-            width += tp.getX() - (x + width) + tp.getWidth();
+            // 如果当前文字不是新一行的文字，则需要累加当前行的宽度, 计算方式：当前文字的宽度 + 当前文字距离上一个文字的字间距；
+            // 当前文字距离上一个文字的字间距 = (当前文字的x坐标 - 上一个文字的x坐标 - 上一个文字的宽度)
+            width += tp.getWidth() + (tp.getX() - preText.getX() - preText.getWidth());
         }
+
         height = Math.max(height, tp.getHeight());
         ascent = Math.max(ascent, getAscent(tp.getFont(), tp.getYScale()));
         descent = Math.min(descent, getDescent(tp.getFont(), tp.getYScale()));
         this.currentTextWidth = tp.getWidth();
+        this.preText = tp;
     }
 
     public float getX() {
         return x;
+    }
+
+    public void setX(float x){
+        this.x = x;
     }
 
     public float getTop() {
@@ -58,6 +76,10 @@ public class TextMetrics {
 
     public void setNewLine(boolean newLine) {
         isNewLine = newLine;
+    }
+
+    public void setWidth(float width){
+        this.width = width;
     }
 
     public float getBottom() {

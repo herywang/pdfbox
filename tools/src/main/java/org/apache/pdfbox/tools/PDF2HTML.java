@@ -28,10 +28,11 @@ import org.apache.pdfbox.tools.dom.BoxStyle;
 import org.apache.pdfbox.tools.dom.FontTable;
 import org.apache.pdfbox.tools.dom.PathEntity;
 import org.apache.pdfbox.tools.dom.TextMetrics;
+import org.apache.pdfbox.tools.imageio.ImageIOUtil;
 import org.apache.pdfbox.util.Matrix;
 
 import javax.imageio.ImageIO;
-import java.awt.*;
+import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -47,7 +48,7 @@ import java.util.Set;
 /**
  * @author wangheng
  * @date 2024/5/29
- * PDF to HTML with style
+ *         PDF to HTML with style
  */
 public class PDF2HTML extends PDFTextStripper {
 
@@ -76,9 +77,21 @@ public class PDF2HTML extends PDFTextStripper {
     private TextPosition lastText = null;
     private TextPosition paragraphStartText = null;
     private TextPosition currentLineStartText = null;
-    private StringBuilder textLine = new StringBuilder();
+    private TextPosition lastLineStartText = null;
+
+    private float currentPageLeftSpace;
+    private float currentPageRightSpace;
+    // HTML结果中，是否已经重置完成首航缩进
+    private boolean currentParagraphHasChangedFirstLineIndent = false;
+
+    // 当前段落的全部内容存储对象
+    private StringBuilder paragraphTextContent = new StringBuilder();
     private BoxStyle style = new BoxStyle("pt");
     private TextMetrics textMetrics = null;
+    // 当前句子内容
+    private StringBuilder currentSentenceContent = new StringBuilder();
+    // 上一个行间距
+    private float lastLineSpacing = -1.F;
 
     // ***************** PDF绘制线条所用的对象 ********************
     private float line_position_x = 0;
@@ -109,10 +122,12 @@ public class PDF2HTML extends PDFTextStripper {
                 "<style type=\"text/css\">\n" +
                 ".page{" +
                 "position:relative;margin:0.5em;" +
-                "box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2), 10px 10px 20px rgba(0, 0, 0, 0.2),15px 15px 30px rgba(0, 0, 0, 0.2);" +
+                "box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2), 10px 10px 20px rgba(0, 0, 0, 0.2),15px 15px 30px rgba(0, 0, 0, 0.2);"
+                +
                 "margin-bottom:16px;}\n" +
                 ".p{position:absolute;white-space:pre-wrap;border:1px solid blue;border-radius:3px;}\n" +
                 ".l{position:absolute;}\n" +
+                ".seq{background-color:rgba(255,127,80,0.5);margin-left:3px;margin-right:3px;}\n" +
                 "</style>\n" +
                 "</head>\n<body>\n";
         output.write(startDocumentStr);
@@ -144,6 +159,8 @@ public class PDF2HTML extends PDFTextStripper {
         String pageStart;
         this.currentLineStartText = null;
         this.paragraphStartText = null;
+        this.currentPageLeftSpace = Float.MAX_VALUE;
+        this.currentPageRightSpace = Float.MAX_VALUE;
         PDRectangle cropBox = page.getCropBox();
 
         // 创建当前页面的放射变化矩阵
@@ -181,8 +198,8 @@ public class PDF2HTML extends PDFTextStripper {
 
         output.write(pageStart);
         super.processPage(page);
-        if (textLine.length() > 0) {
-            endSequence();
+        if (paragraphTextContent.length() > 0) {
+            endParagraph();
         }
         output.write("</div>\n");
     }
@@ -197,42 +214,73 @@ public class PDF2HTML extends PDFTextStripper {
     protected void processTextPosition(TextPosition text) {
         if (lastText != null) {
             // 判断是否在统一行
-            float tolerance = Math.abs(lastText.getY() - text.getY());
+            // 获取当前文本和上一个文本的行间距
+            float textSpace = Math.abs(lastText.getY() - text.getY());
             float maxHeight = Math.max(lastText.getHeight(), text.getHeight());
-            if (tolerance > maxHeight) {
+            if (textSpace > maxHeight) {
                 // current text has not same y position with pre-text, so we need to judge
-                // 不在同一行,判断是否需要与上一行的最后一个字符进行连句
-                float rightSpace = currentPageWidth - (lastText.getX() + lastText.getWidth());
-                float leftSpace = text.getX();
-                if (!Objects.equals(lastText.getUnicode(), " ") &&
-                        Math.abs(rightSpace - leftSpace) < Math.max(lastText.getWidth() * 1.5, text.getWidth() * 1.5)) {
-                    // 需要连接
-                    if (this.textMetrics == null) {
-                        this.paragraphStartText = text;
-                        this.textMetrics = new TextMetrics(text);
-                    }
-                    if (currentLineStartText == null) {
-                        currentLineStartText = text;
-                    }
-                    // set current state as new line, but not split to multi-div line.
-                    this.textMetrics.setNewLine(true);
-                    // set line space.
-                    this.textMetrics.setHeight(Math.abs(text.getY() - lastText.getY()));
+                // 不在同一行，首先判断行间距，如果行间距有变化，则说明不是同一个段落的内容
+                this.currentPageRightSpace = Math.min(this.currentPageRightSpace,
+                        this.currentPageWidth - (lastText.getX() + lastText.getWidth()));
+                this.currentPageLeftSpace = Math.min(this.currentPageLeftSpace, text.getX());
+
+                if (this.lastLineSpacing != -1.f && Math.abs(textSpace - this.lastLineSpacing) > 1.f) {
+                    // 行间距有变化, 说明不是同一段落的内容，需要断句
+                    endParagraph();
+                    this.currentLineStartText = text;
                 } else {
-                    // 断句
-                    endSequence();
+                    // 行间距没有变化, 需要通过另一种算法来判定是否需要进行组句
+                    this.lastLineSpacing = textSpace;
+                    float rightSpace =
+                            currentPageWidth - (lastText.getX() + lastText.getWidth()) - this.currentPageRightSpace;
+                    float leftSpace = text.getX() - this.currentPageLeftSpace;
+                    this.lastLineStartText = currentLineStartText;
+                    this.currentLineStartText = text;
+
+                    if (!Objects.equals(lastText.getUnicode(), " ") && checkLineCondition(this.lastLineStartText,
+                            this.currentLineStartText) &&
+                            Math.abs(rightSpace - leftSpace) < Math.max(lastText.getWidth() * 1.1,
+                                    text.getWidth() * 1.1)) {
+                        // 需要连接两行组成一段
+                        if (this.textMetrics == null) {
+                            this.paragraphStartText = text;
+                            this.textMetrics = new TextMetrics(text);
+                        }
+                        // set current state as new line, but not split to multi-div line.
+                        this.textMetrics.setNewLine(true);
+                        this.textMetrics.setWidth(this.lastText.getX() + this.lastText.getWidth() - text.getX());
+                        if (!this.currentParagraphHasChangedFirstLineIndent) {
+                            float indent = Math.abs(text.getX() - this.textMetrics.getX());
+                            this.paragraphTextContent.insert(0,
+                                    "<span style=\"display:inline-block;width:" + indent + "pt;\"></span>");
+                            this.currentParagraphHasChangedFirstLineIndent = true;
+                        }
+                        this.textMetrics.setX(text.getX());
+                        // set line space.
+                        this.textMetrics.setHeight(Math.abs(text.getY() - lastText.getY()));
+                    } else {
+                        // 断句
+                        endParagraph();
+                        this.currentLineStartText = text;
+                    }
                 }
             } else {
                 // 在同一行, 判断两个字符之间的空白符号数量
-                float space = Math.abs(text.getX() - (lastText.getX() + lastText.getWidth())) /
+                float spaceCount = Math.abs(text.getX() - (lastText.getX() + lastText.getWidth())) /
                         ((lastText.getWidth() + text.getWidth()) / 2);
-                textLine.append("    ".repeat(Math.max(0, (int) space)));
-                if (space > maxHeight) {
-                    endSequence();
+                if (spaceCount > 2) {
+                    // 需要断句
+                    endParagraph();
+                    this.currentLineStartText = text;
+                } else {
+                    paragraphTextContent.append("    ".repeat(Math.max(0, (int) spaceCount)));
                 }
             }
-        }else{
+        } else {
+            // 上一个文字为空
             this.currentLineStartText = text;
+            this.lastLineStartText = null;
+            this.currentPageLeftSpace = text.getX();
         }
         // 统计本行文本宽度
         if (this.textMetrics == null) {
@@ -243,9 +291,27 @@ public class PDF2HTML extends PDFTextStripper {
         }
         updateStyle(text);
         String unicodeText = text.getUnicode();
-        textLine.append(unicodeText);
+        if (paragraphTextContent.length() == 0 || END_SEQ_TAGS.contains(lastText.getUnicode())) {
+            paragraphTextContent.append("<span class=\"seq\">");
+        }
+        paragraphTextContent.append(unicodeText);
+        currentSentenceContent.append(unicodeText);
+        if (END_SEQ_TAGS.contains(unicodeText)) {
+            paragraphTextContent.append("</span>");
+            // System.out.println(this.currentSentenceContent);
+            this.currentSentenceContent = new StringBuilder();
+        }
         lastText = text;
     }
+
+    private boolean checkLineCondition(TextPosition lastLineStartText, TextPosition currentLineStartText) {
+        if (lastLineStartText == null || currentLineStartText == null) {
+            return false;
+        }
+        return Math.abs(lastLineStartText.getX() - currentLineStartText.getX()) <
+                Math.max(lastLineStartText.getWidth(), currentLineStartText.getWidth()) * 4;
+    }
+
 
     /**
      * This is used to handle an operation.
@@ -327,7 +393,8 @@ public class PDF2HTML extends PDFTextStripper {
                     Rectangle bounds = image.getImage().getRaster().getBounds();
 
                     // 将自身的变换矩阵，转换成仿射变化矩阵
-                    AffineTransform affineTransform = new AffineTransform(currentTransformationMatrix.createAffineTransform());
+                    AffineTransform affineTransform = new AffineTransform(
+                            currentTransformationMatrix.createAffineTransform());
                     // 反转y轴坐标，因为PDF页面中坐标是从左下角开始的，而图像中坐标是从左上角开始的
                     affineTransform.scale(1.0 / image.getWidth(), -1.0 / image.getHeight());
                     affineTransform.translate(0, -image.getHeight());
@@ -341,15 +408,47 @@ public class PDF2HTML extends PDFTextStripper {
                     float positionY = (float) imageBounds.getY();
                     float width = (float) imageBounds.getWidth();
                     float height = (float) imageBounds.getHeight();
-                    System.out.println("Image format name: " + formatName);
+                    // System.out.println("Image format name: " + formatName);
                     if (formatName == null || formatName.isEmpty()) {
                         System.out.println("unknow image format in PDF");
                     } else {
-                        ImageIO.write(imageBuffer, formatName, outputImageByteStream);
+                        // 压缩图像
+                        // 像素数量
+                        int pixelSize = imageBuffer.getColorModel().getPixelSize();
+                        int pixelCount = imageBuffer.getWidth() * imageBuffer.getHeight();
+                        // 图像占用内存大小，单位：B, 字节
+                        long memorySize = (long) pixelCount * pixelSize / 8;
+                        System.out.println("压缩之前图像大小：" + memorySize / 1024 + "KB");
+                        float compressQuality = 0.5f;
+                        if (memorySize > 5 * (1 << 20)) {
+                            compressQuality = 0.1f;
+                        } else if (memorySize > 2 * (1 << 20)) {
+                            compressQuality = 0.2f;
+                        } else if (memorySize > (1 << 20)) {
+                            compressQuality = 0.4f;
+                        } else if (memorySize <= (1 << 16)) {
+                            compressQuality = 0.9f;
+                        }
+                        boolean compressSuccessful = false;
+                        if (memorySize > 1 << 20) {
+                            // 图像大小大于1MB，压缩
+                            // System.out.println("图像格式：" + formatName);
+                            try {
+                                compressSuccessful = ImageIOUtil.writeImage(imageBuffer, formatName,
+                                        outputImageByteStream, 300, compressQuality);
+                            } catch (Exception e) {
+                                // 图像压缩失败，直接输出
+                            }
+                        }
+                        if (!compressSuccessful) {
+                            ImageIO.write(imageBuffer, formatName, outputImageByteStream);
+                        }
                         String base64Image = Base64.getEncoder().encodeToString(outputImageByteStream.toByteArray());
-                        String imageElement = createImageElement(base64Image, formatName, positionX, positionY, width, height);
+                        System.out.println("图像大小:" + base64Image.length() * 2 / 1024 + "KB");
+                        String imageElement = createImageElement(base64Image, formatName, positionX, positionY, width,
+                                height);
                         output.write(imageElement);
-                        System.out.println("获取到图像");
+                        // System.out.println("获取到图像");
                     }
                 }
             }
@@ -370,44 +469,54 @@ public class PDF2HTML extends PDFTextStripper {
     /**
      * end sequence
      */
-    private void endSequence() {
-        if (this.textLine.length() > 0) {
-            if (StringUtils.isBlank(this.textLine.toString())) {
-                this.textLine = new StringBuilder();
-                this.style = new BoxStyle("pt");
-                this.textMetrics = null;
-                this.currentLineStartText = null;
-                this.paragraphStartText = null;
-                return;
-            }
-            try {
-                this.style.setLeft(this.textMetrics.getX());
-                this.style.setTop(this.textMetrics.getTop());
-                this.style.setLineHeight(this.textMetrics.getHeight());
-                int spaceCount = 0;
-                if (paragraphStartText != null && currentLineStartText != null) {
-                    float space = Math.abs(this.paragraphStartText.getX() - this.currentLineStartText.getX());
-                    this.style.setLeft(Math.min(this.paragraphStartText.getX(), this.currentLineStartText.getX()));
-                    spaceCount = (int) (space / this.currentLineStartText.getWidth());
-                }
-                // StringBuilder sb = new StringBuilder();
-                // sb.append("    ".repeat(Math.max(0, spaceCount)));
-                if(this.paragraphStartText != null){
-                    float width = this.textMetrics.getWidth() + this.lastText.getWidth() * spaceCount * 4;
-                    this.style.setWidth(width);
-                }else{
-                    this.style.setWidth(this.textMetrics.getWidth());
-                }
-                output.write("<div class=\"p\" style=\"" + style.toString() + "\">" + textLine + "</div>");
-                this.textLine = new StringBuilder();
-                this.style = new BoxStyle("pt");
-                this.textMetrics = null;
-                this.currentLineStartText = null;
-                this.paragraphStartText = null;
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+    private void endParagraph() {
+        if (this.paragraphTextContent.length() == 0) {
+            return;
+        }
+        this.lastLineSpacing = -1f;
+        this.lastLineStartText = null;
+        if (StringUtils.isBlank(this.paragraphTextContent.toString())) {
+            this.paragraphTextContent = new StringBuilder();
+            this.style = new BoxStyle("pt");
+            this.textMetrics = null;
+            this.currentLineStartText = null;
+            this.paragraphStartText = null;
+            return;
+        }
+        if (this.currentSentenceContent.length() != 0) {
+            this.paragraphTextContent.append("</span>");
+            // System.out.println(this.currentSentenceContent);
+            this.currentSentenceContent = new StringBuilder();
+        }
 
+        try {
+            this.style.setLeft(this.textMetrics.getX());
+            this.style.setTop(this.textMetrics.getTop());
+            this.style.setLineHeight(this.textMetrics.getHeight());
+            // int spaceCount = 0;
+            // if (paragraphStartText != null && currentLineStartText != null) {
+            //     float space = Math.abs(this.paragraphStartText.getX() - this.currentLineStartText.getX());
+            //     this.style.setLeft(Math.min(this.paragraphStartText.getX(), this.currentLineStartText.getX()));
+            //     spaceCount = (int) (space / this.currentLineStartText.getWidth());
+            // }
+            // StringBuilder sb = new StringBuilder();
+            // sb.append("    ".repeat(Math.max(0, spaceCount)));
+            // if(this.paragraphStartText != null){
+            //     float width = this.textMetrics.getWidth() + this.lastText.getWidth() * spaceCount * 4;
+            //     this.style.setWidth(width);
+            // }else{
+            //     this.style.setWidth(this.textMetrics.getWidth());
+            // }
+            this.style.setWidth(this.textMetrics.getWidth() + lastText.getWidth());
+            output.write("<div class=\"p\" style=\"" + style.toString() + "\">" + paragraphTextContent + "</div>");
+            this.paragraphTextContent = new StringBuilder();
+            this.currentParagraphHasChangedFirstLineIndent = false;
+            this.style = new BoxStyle("pt");
+            this.textMetrics = null;
+            this.currentLineStartText = null;
+            this.paragraphStartText = null;
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
