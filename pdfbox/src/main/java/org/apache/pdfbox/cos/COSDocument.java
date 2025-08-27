@@ -150,7 +150,7 @@ public class COSDocument extends COSBase implements Closeable
         catch (IOException exception1)
         {
             LOG.warn(
-                    "An error occured when creating stream cache. Using memory only cache as fallback.",
+                    "An error occurred when creating stream cache. Using memory only cache as fallback.",
                     exception1);
         }
         try
@@ -159,7 +159,7 @@ public class COSDocument extends COSBase implements Closeable
         }
         catch (IOException exception2)
         {
-            LOG.warn("An error occured when creating stream cache for fallback.", exception2);
+            LOG.warn("An error occurred when creating stream cache for fallback.", exception2);
         }
         return null;
     }
@@ -364,7 +364,10 @@ public class COSDocument extends COSBase implements Closeable
     }
 
     /**
-     * This will set the document ID.
+     * This will set the document ID. This should be an array of two strings. This method cannot be
+     * used to remove the document id by passing null or an empty array; it will be recreated. Only
+     * the first existing string is used when writing, the second one is always recreated. If you
+     * don't want this, you'll have to modify the {@code COSWriter} class, look for {@link COSName#ID}.
      *
      * @param id The document id.
      */

@@ -22,10 +22,9 @@ package org.apache.pdfbox.examples.signature.cert;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.InvalidKeyException;
 import java.security.PublicKey;
-import java.security.SignatureException;
 import java.security.cert.CertPathBuilder;
 import java.security.cert.CertPathBuilderException;
 import java.security.cert.CertStore;
@@ -263,10 +262,9 @@ public final class CertificateVerifier
     /**
      * Checks whether given X.509 certificate is self-signed.
      * @param cert The X.509 certificate to check.
-     * @return true if the certificate is self-signed, false if not.
-     * @throws java.security.GeneralSecurityException 
+     * @return true if the certificate is self-signed, false if error or not self-signed.
      */
-    public static boolean isSelfSigned(X509Certificate cert) throws GeneralSecurityException
+    public static boolean isSelfSigned(X509Certificate cert)
     {
         try
         {
@@ -275,7 +273,7 @@ public final class CertificateVerifier
             cert.verify(key, SecurityProvider.getProvider());
             return true;
         }
-        catch (SignatureException | InvalidKeyException ex)
+        catch (GeneralSecurityException | IllegalArgumentException ex)
         {
             // Invalid signature --> not self-signed
             LOG.debug("Couldn't get signature information - returning false", ex);
@@ -330,7 +328,7 @@ public final class CertificateVerifier
             }
             ASN1TaggedObject location = (ASN1TaggedObject) obj.getObjectAt(1);
             ASN1OctetString uri = (ASN1OctetString) location.getBaseObject();
-            String urlString = new String(uri.getOctets());
+            String urlString = new String(uri.getOctets(), StandardCharsets.UTF_8);
             LOG.info("CA issuers URL: {}", urlString);
             try (InputStream in = SigUtils.openURL(urlString))
             {
@@ -341,7 +339,7 @@ public final class CertificateVerifier
             }
             catch (IOException | URISyntaxException ex)
             {
-                LOG.warn("{} failure: {}", urlString, ex.getMessage(), ex);
+                LOG.warn(() -> urlString + " failure: " + ex.getMessage(), ex);
             }
             catch (CertificateException ex)
             {
@@ -435,7 +433,7 @@ public final class CertificateVerifier
                         && location.getTagNo() == GeneralName.uniformResourceIdentifier)
                 {
                     ASN1OctetString url = (ASN1OctetString) location.getBaseObject();
-                    String ocspURL = new String(url.getOctets());
+                    String ocspURL = new String(url.getOctets(), StandardCharsets.UTF_8);
                     LOG.info("OCSP URL: {}", ocspURL);
                     return ocspURL;
                 }

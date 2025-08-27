@@ -22,7 +22,7 @@
     <groupId>org.apache.pdfbox</groupId>
     <artifactId>pdfbox-parent</artifactId>
     <version>4.0.0-SNAPSHOT</version>
-    <relativePath>../pom.xml</relativePath>
+    <relativePath>../parent/pom.xml</relativePath>
   </parent>
 
   <artifactId>fontbox</artifactId>
@@ -37,6 +37,12 @@
   <inceptionYear>2008</inceptionYear>
   <url>http://pdfbox.apache.org/</url>
 
+	<scm>
+		<connection>scm:svn:https://svn.apache.org/repos/asf/pdfbox/trunk/fontbox</connection>
+		<developerConnection>scm:svn:https://svn.apache.org/repos/asf/pdfbox/trunk/fontbox</developerConnection>
+		<url>https://svn.apache.org/viewvc/pdfbox/trunk/fontbox</url>
+	</scm>
+
   <dependencies>
     <dependency>
         <groupId>org.apache.pdfbox</groupId>
@@ -46,12 +52,10 @@
     <dependency>
         <groupId>org.apache.logging.log4j</groupId>
         <artifactId>log4j-api</artifactId>
-        <version>${log4j2.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-core</artifactId>
-      <version>${log4j2.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -186,6 +190,19 @@
                       <outputFileName>ipag00303.zip</outputFileName>
                       <unpack>true</unpack>
                       <sha512>59535137c649a2f8bdbb463cd716426811a6003a65883ca6e45bb0af1d526b3889af0fba3a353e90bc8d373cd32b90a27ff9ff6916ecbccb42e922c09e9b046a</sha512>
+                  </configuration>
+              </execution>
+              <execution>
+                  <id>PDFBOX-6015</id>
+                  <phase>generate-test-resources</phase>
+                  <goals>
+                      <goal>wget</goal>
+                  </goals>
+                  <configuration>
+                      <url>https://issues.apache.org/jira/secure/attachment/13076859/Keyboard.ttf</url>
+                      <outputDirectory>${project.build.directory}/fonts</outputDirectory>
+                      <outputFileName>Keyboard.ttf</outputFileName>
+                      <sha512>1c31bf41c722681419af734213555203e5a5168364aff2a56b31a717996e9b642a039c7c0df27bb1491b1a0344929e9ba20c5a788cd5fa665f65fd8090ee06e7</sha512>
                   </configuration>
               </execution>
           </executions>

@@ -17,10 +17,14 @@
 package org.apache.pdfbox.pdmodel.documentinterchange.logicalstructure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -32,7 +36,8 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.io.RandomAccessReadBuffer;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.junit.jupiter.api.Assertions;
+import org.apache.pdfbox.pdmodel.documentinterchange.markedcontent.PDMarkedContent;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -61,7 +66,7 @@ class PDStructureElementTest
 
         // collect attributes and check their count.
         assertEquals(117, attributeSet.size());
-        int cnt = attributeSet.stream().map(attributes -> attributes.size()).reduce(0, Integer::sum);
+        int cnt = attributeSet.stream().map(Revisions::size).reduce(0, Integer::sum);
         assertEquals(111, cnt); // this one was 105 before PDFBOX-4197 was fixed
         assertEquals(0, classSet.size());
     }
@@ -86,7 +91,7 @@ class PDStructureElementTest
 
         // collect attributes and check their count.
         assertEquals(72, attributeSet.size());
-        int cnt = attributeSet.stream().map(attributes -> attributes.size()).reduce(0, Integer::sum);
+        int cnt = attributeSet.stream().map(Revisions::size).reduce(0, Integer::sum);
         assertEquals(45, cnt);
         assertEquals(10, classSet.size());
     }
@@ -125,7 +130,7 @@ class PDStructureElementTest
                     {
                         String className = classNames.getObject(i);
                         classSet.add(className);
-                        Assertions.assertTrue(classMap.containsKey(className), "'" + className + "' not in ClassMap " + classMap);
+                        assertTrue(classMap.containsKey(className), "'" + className + "' not in ClassMap " + classMap);
                     }
                 }
             }
@@ -134,5 +139,54 @@ class PDStructureElementTest
                 checkElement(kdict.getDictionaryObject(COSName.K), attributeSet, classMap, classSet);
             }
         }
-    }    
+    }
+    
+    @Test
+    void testSimple()
+    {
+        PDStructureElement structureElement = new PDStructureElement("S", null);
+        assertEquals(PDStructureElement.TYPE, structureElement.getType());
+        assertEquals("S", structureElement.getStructureType());
+        assertNull(structureElement.getParent());
+        structureElement.setStructureType("T");
+        assertEquals("T", structureElement.getStructureType());
+        structureElement.setElementIdentifier("Ident");
+        assertEquals("Ident", structureElement.getElementIdentifier());
+        structureElement.setRevisionNumber(33);
+        assertEquals(33, structureElement.getRevisionNumber());
+        structureElement.incrementRevisionNumber();
+        assertEquals(34, structureElement.getRevisionNumber());
+        assertThrows(IllegalArgumentException.class, () -> structureElement.setRevisionNumber(-1));
+        structureElement.setTitle("Title");
+        assertEquals("Title", structureElement.getTitle());
+        structureElement.setLanguage("Klingon");
+        assertEquals("Klingon", structureElement.getLanguage());
+        structureElement.setAlternateDescription("Alto");
+        assertEquals("Alto", structureElement.getAlternateDescription());
+        structureElement.setActualText("Actual");
+        assertEquals("Actual", structureElement.getActualText());
+        structureElement.setExpandedForm("ExpF");
+        assertEquals("ExpF", structureElement.getExpandedForm());
+        assertThrows(IllegalArgumentException.class, () -> structureElement.appendKid(-1));
+        structureElement.appendKid(0);
+        PDMarkedContentReference mcr1 = new PDMarkedContentReference();
+        mcr1.setMCID(1);
+        structureElement.appendKid(mcr1);
+        PDMarkedContentReference mcr2 = new PDMarkedContentReference();
+        mcr2.setMCID(2);
+        PDMarkedContent mc2 = PDMarkedContent.create(COSName.S, mcr2.getCOSObject());
+        structureElement.appendKid(mc2);
+        PDMarkedContentReference mcrSubZero = new PDMarkedContentReference();
+        assertThrows(IllegalArgumentException.class, () -> mcrSubZero.setMCID(-1));
+        mcrSubZero.getCOSObject().setInt(COSName.MCID, -1);
+        PDMarkedContent mcSubZero = PDMarkedContent.create(COSName.S, mcrSubZero.getCOSObject());
+        assertThrows(IllegalArgumentException.class, () -> structureElement.appendKid(mcSubZero));
+        List<Object> kids = structureElement.getKids();
+        assertEquals(3, kids.size());
+        assertEquals(0, kids.get(0));
+        mcr1 = (PDMarkedContentReference) kids.get(1);
+        assertEquals(PDMarkedContentReference.TYPE, mcr1.getCOSObject().getNameAsString(COSName.TYPE));
+        assertEquals(1, mcr1.getMCID());
+        assertEquals(2, kids.get(2));
+    }
 }

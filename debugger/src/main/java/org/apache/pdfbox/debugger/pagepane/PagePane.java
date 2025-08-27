@@ -69,6 +69,7 @@ import org.apache.pdfbox.debugger.ui.HighResolutionImageIcon;
 import org.apache.pdfbox.debugger.ui.ImageTypeMenu;
 import org.apache.pdfbox.debugger.ui.RenderDestinationMenu;
 import org.apache.pdfbox.debugger.ui.TextDialog;
+import org.apache.pdfbox.debugger.ui.TextStripperMenu;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.fixup.AcroFormDefaultFixup;
 import org.apache.pdfbox.pdmodel.fixup.PDDocumentFixup;
@@ -149,6 +150,10 @@ public class PagePane implements ActionListener, AncestorListener, MouseMotionLi
 
     private void collectLinkLocation(PDAnnotationLink linkAnnotation) throws IOException
     {
+        if (linkAnnotation.getRectangle() == null)
+        {
+            return;
+        }
         PDAction action = linkAnnotation.getAction();
         if (action instanceof PDActionURI)
         {
@@ -209,9 +214,9 @@ public class PagePane implements ActionListener, AncestorListener, MouseMotionLi
             {
                 // check if the annotation widget is on this page
                 // (checking widget.getPage() also works, but it is sometimes null)
-                if (dictionarySet.contains(widget.getCOSObject()))
+                if (dictionarySet.contains(widget.getCOSObject()) && widget.getRectangle() != null)
                 {
-                    rectMap.put(widget.getRectangle(), "Field name: " + field.getFullyQualifiedName());
+                    rectMap.put(widget.getRectangle(), "Field name: " + field.getFullyQualifiedName() + ", value: " + field.getValueAsString());
                 }
             }
         }
@@ -306,6 +311,8 @@ public class PagePane implements ActionListener, AncestorListener, MouseMotionLi
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setStartPage(pageIndex + 1);
             stripper.setEndPage(pageIndex + 1);
+            stripper.setSortByPosition(TextStripperMenu.isSorted());
+            stripper.setIgnoreContentStreamSpaceGlyphs(TextStripperMenu.isIgnoreSpaces());
             textDialog.setText(stripper.getText(document));
         }
         catch (IOException ex)
@@ -540,8 +547,8 @@ public class PagePane implements ActionListener, AncestorListener, MouseMotionLi
             BufferedImage image = renderer.renderImage(pageIndex, scale, ImageTypeMenu.getImageType(), RenderDestinationMenu.getRenderDestination());
             long t1 = System.nanoTime();
 
-            long ms = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS);
-            labelText = "Rendered in " + ms + " ms";
+            float s = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS) / 1000f;
+            labelText = "Rendered in " + s + " second" + (s > 1 ? "s" : "");
             statuslabel.setText(labelText);
 
             // debug overlays

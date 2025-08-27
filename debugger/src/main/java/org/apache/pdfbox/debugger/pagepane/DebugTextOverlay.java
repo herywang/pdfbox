@@ -24,9 +24,7 @@ import java.awt.Stroke;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.Rectangle2D;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.List;
 import org.apache.logging.log4j.Logger;
@@ -95,8 +93,7 @@ final class DebugTextOverlay
             setStartPage(pageIndex + 1);
             setEndPage(pageIndex + 1);
 
-            Writer dummy = new OutputStreamWriter(new ByteArrayOutputStream());
-            writeText(document, dummy);
+            writeText(document, Writer.nullWriter());
 
             if (DebugTextOverlay.this.showTextStripperBeads)
             {
@@ -221,8 +218,8 @@ final class DebugTextOverlay
             }
             catch (IOException ex)
             {
-                LOG.error("Couldn't get bounds for code {} at position ({},{})", code,
-                        at.getTranslateX(), at.getTranslateY(), ex);
+                LOG.error(() -> "Couldn't get bounds for code " + code + " at position (" +
+                        at.getTranslateX() + "," + at.getTranslateY() + ")", ex);
             }
             if (bbox == null)
             {

@@ -16,10 +16,8 @@
  */
 package org.apache.pdfbox.examples.util;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.io.Writer;
 
 import org.apache.pdfbox.Loader;
@@ -93,11 +91,10 @@ public class PrintTextColors extends PDFTextStripper
             {
                 PDFTextStripper stripper = new PrintTextColors();
                 stripper.setSortByPosition(true);
-                stripper.setStartPage(0);
+                stripper.setStartPage(1);
                 stripper.setEndPage(document.getNumberOfPages());
 
-                Writer dummy = new OutputStreamWriter(new ByteArrayOutputStream());
-                stripper.writeText(document, dummy);
+                stripper.writeText(document, Writer.nullWriter());
             }
         }
     }

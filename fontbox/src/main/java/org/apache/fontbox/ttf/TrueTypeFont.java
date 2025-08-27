@@ -179,6 +179,32 @@ public class TrueTypeFont implements FontBoxFont, Closeable
     }
 
     /**
+     * Returns the raw bytes of the given table, no more than {@code limit} bytes.
+     * 
+     * @param table the table to read.
+     * @param limit maximum length of array to return
+     * @return the raw bytes of the given table
+     * 
+     * @throws IOException if there was an error accessing the table.
+     */
+    public byte[] getTableNBytes(TTFTable table, int limit) throws IOException
+    {
+        synchronized (lockReadtable)
+        {
+            // save current position
+            long currentPosition = data.getCurrentPosition();
+            data.seek(table.getOffset());
+
+            // read all data
+            byte[] bytes = data.read(Math.min(limit, (int) table.getLength()));
+
+            // restore current position
+            data.seek(currentPosition);
+            return bytes;
+        }
+    }
+
+    /**
      * This will get the naming table for the true type font.
      * 
      * @return The naming table or null if it doesn't exist.
@@ -383,6 +409,28 @@ public class TrueTypeFont implements FontBoxFont, Closeable
         table.read(this, data);
         // restore current position
         data.seek(currentPosition);
+    }
+
+    /**
+     * Read the given table headers. Package-private, used by TTFParser only.
+     * 
+     * @param tag the name of the table to be read
+     * @param outHeaders consumes headers
+     * 
+     * @throws IOException if there was an error reading the table.
+     */
+    void readTableHeaders(String tag, FontHeaders outHeaders) throws IOException
+    {
+        TTFTable table = tables.get(tag);
+        if (table != null)
+        {
+            // save current position
+            long currentPosition = data.getCurrentPosition();
+            data.seek(table.getOffset());
+            table.readHeaders(this, data, outHeaders);
+            // restore current position
+            data.seek(currentPosition);
+        }
     }
 
     /**
@@ -599,6 +647,12 @@ public class TrueTypeFont implements FontBoxFont, Closeable
             // actually means "Unicode, non-standard character set"
             cmap = cmapTable.getSubtable(CmapTable.PLATFORM_WINDOWS,
                                          CmapTable.ENCODING_WIN_SYMBOL);
+        }
+        if (cmap == null)
+        {
+            // PDFBOX-6015
+            cmap = cmapTable.getSubtable(CmapTable.PLATFORM_UNICODE,
+                                         CmapTable.ENCODING_UNICODE_1_1);
         }
         if (cmap == null)
         {

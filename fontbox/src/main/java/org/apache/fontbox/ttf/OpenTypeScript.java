@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
@@ -215,7 +216,7 @@ public final class OpenTypeScript
         }
         catch (IOException e)
         {
-            LOG.warn("Could not parse Scripts.txt, mirroring char map will be empty: {}",
+            LOG.warn(() -> "Could not parse Scripts.txt, mirroring char map will be empty: " + 
                     e.getMessage(), e);
         }
     }
@@ -227,7 +228,7 @@ public final class OpenTypeScript
     private static void parseScriptsFile(InputStream inputStream) throws IOException
     {
         Map<int[], String> unicodeRanges = new TreeMap<>(Comparator.comparingInt(o -> o[0]));
-        try (LineNumberReader rd = new LineNumberReader(new InputStreamReader(inputStream)))
+        try (LineNumberReader rd = new LineNumberReader(new InputStreamReader(inputStream, StandardCharsets.US_ASCII)))
         {
             int[] lastRange = { Integer.MIN_VALUE, Integer.MIN_VALUE };
             String lastScript = null;

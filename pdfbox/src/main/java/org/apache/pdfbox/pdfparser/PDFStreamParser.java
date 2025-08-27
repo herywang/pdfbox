@@ -18,6 +18,7 @@ package org.apache.pdfbox.pdfparser;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.Logger;
@@ -47,6 +48,7 @@ public class PDFStreamParser extends BaseParser
 
     private static final int MAX_BIN_CHAR_TEST_LENGTH = 10;
     private final byte[] binCharTestArr = new byte[MAX_BIN_CHAR_TEST_LENGTH];
+    private int inlineImageDepth = 0;
     
     /**
      * Constructor.
@@ -222,12 +224,25 @@ public class PDFStreamParser extends BaseParser
                         dotNotRead = false;
                     }
                 }
-                return COSNumber.get(buf.toString());
+                String s = buf.toString();
+                if ("+".equals(s))
+                {
+                    // PDFBOX-5906
+                    LOG.warn("isolated '+' is ignored");
+                    return COSNull.NULL;
+                }
+                return COSNumber.get(s);
             case 'B':
                 String nextOperator = readString();
                 Operator beginImageOP = Operator.getOperator(nextOperator);
                 if (nextOperator.equals(OperatorName.BEGIN_INLINE_IMAGE))
                 {
+                    inlineImageDepth++;
+                    if (inlineImageDepth > 1)
+                    {
+                        // PDFBOX-6038
+                        throw new IOException("Nested '" + OperatorName.BEGIN_INLINE_IMAGE + "' operator not allowed");
+                    }
                     COSDictionary imageParams = new COSDictionary();
                     beginImageOP.setImageParameters( imageParams );
                     Object nextToken = null;
@@ -252,6 +267,7 @@ public class PDFStreamParser extends BaseParser
                                     source.getPosition());
                         }
                         beginImageOP.setImageData(imageData.getImageData());
+                        inlineImageDepth--;
                     }
                 }
                 return beginImageOP;
@@ -266,9 +282,10 @@ public class PDFStreamParser extends BaseParser
                             "' at stream offset " + currentPosition);
                 }
                 ByteArrayOutputStream imageData = new ByteArrayOutputStream();
-                if( isWhitespace() )
+                // skip one line break (CR, LF or CRLF) or any one-byte whitespace
+                if (!skipLinebreak() && isWhitespace())
                 {
-                    //pull off the whitespace character
+                    // pull off the whitespace character
                     source.read();
                 }
                 int lastByte = source.read();
@@ -326,7 +343,10 @@ public class PDFStreamParser extends BaseParser
         boolean noBinData = true;
         int startOpIdx = -1;
         int endOpIdx = -1;
-        
+        String s = "";
+
+        LOG.debug("String after EI: '{}'", () -> new String(binCharTestArr, StandardCharsets.US_ASCII));
+
         if (readBytes > 0)
         {
             for (int bIdx = 0; bIdx < readBytes; bIdx++)
@@ -351,27 +371,32 @@ public class PDFStreamParser extends BaseParser
             }
 
             // PDFBOX-3742: just assuming that 1-3 non blanks is a PDF operator isn't enough
-            if (endOpIdx != -1 && startOpIdx != -1)
+            if (noBinData && endOpIdx != -1 && startOpIdx != -1)
             {
-                // usually, the operator here is Q, sometimes EMC (PDFBOX-2376), S (PDFBOX-3784).
-                String s = new String(binCharTestArr, startOpIdx, endOpIdx - startOpIdx);
-                if (!"Q".equals(s) && !"EMC".equals(s) && !"S".equals(s))
+                // usually, the operator here is Q, sometimes EMC (PDFBOX-2376), S (PDFBOX-3784),
+                // or a number (PDFBOX-5957)
+                s = new String(binCharTestArr, startOpIdx, endOpIdx - startOpIdx, StandardCharsets.US_ASCII);
+                if (!"Q".equals(s) && !"EMC".equals(s) && !"S".equals(s) &&
+                    !s.matches("^\\d*\\.?\\d*$"))
                 {
+                    // operator is not Q, not EMC, not S, nur a number -> assume binary data
                     noBinData = false;
                 }
             }
 
-            // only if not close to eof
-            if (readBytes == MAX_BIN_CHAR_TEST_LENGTH) 
+            // only if not close to EOF
+            if (noBinData && startOpIdx != -1 && readBytes == MAX_BIN_CHAR_TEST_LENGTH) 
             {
-                // a PDF operator is 1-3 bytes long
-                if (startOpIdx != -1 && endOpIdx == -1)
+                if (endOpIdx == -1)
                 {
                     endOpIdx = MAX_BIN_CHAR_TEST_LENGTH;
+                    s = new String(binCharTestArr, startOpIdx, endOpIdx - startOpIdx, StandardCharsets.US_ASCII);
                 }
-                if (endOpIdx != -1 && startOpIdx != -1 && endOpIdx - startOpIdx > 3)
+                LOG.debug("startOpIdx: {} endOpIdx: {} s = '{}'", startOpIdx, endOpIdx, s);
+                // look for token of 3 chars max or a number
+                if (endOpIdx - startOpIdx > 3 && !s.matches("^\\d*\\.?\\d*$"))
                 {
-                    noBinData = false;
+                    noBinData = false; // "operator" too long, assume binary data
                 }
             }
             source.rewind(readBytes);
@@ -379,8 +404,8 @@ public class PDFStreamParser extends BaseParser
         if (!noBinData)
         {
             LOG.warn(
-                    "ignoring 'EI' assumed to be in the middle of inline image at stream offset {}",
-                    source.getPosition());
+                    "ignoring 'EI' assumed to be in the middle of inline image at stream offset {}, s = '{}'",
+                    source.getPosition(), s);
         }
         return noBinData;
     }
@@ -403,7 +428,6 @@ public class PDFStreamParser extends BaseParser
         while(
             nextChar != -1 && // EOF
             !isWhitespace(nextChar) &&
-            !isClosing(nextChar) &&
             nextChar != '[' &&
             nextChar != '<' &&
             nextChar != '(' &&

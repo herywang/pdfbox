@@ -126,7 +126,7 @@ public class PDCIDFontType2 extends PDCIDFont
                 catch (IOException e)
                 {
                     fontIsDamaged = true;
-                    LOG.warn("Could not read embedded OTF for font {}", getBaseFont(), e);
+                    LOG.warn(() -> "Could not read embedded OTF for font " + getBaseFont(), e);
                 }
                 if (ttfFont instanceof OpenTypeFont && !((OpenTypeFont) ttfFont).isSupportedOTF())
                 {
@@ -337,7 +337,7 @@ public class PDCIDFontType2 extends PDCIDFont
     {
         // todo: really we want the BBox, (for text extraction:)
         return (ttf.getHorizontalHeader().getAscender() + -ttf.getHorizontalHeader().getDescender())
-                / ttf.getUnitsPerEm(); // todo: shouldn't this be the yMax/yMin?
+                / (float) ttf.getUnitsPerEm(); // todo: shouldn't this be the yMax/yMin?
     }
 
     @Override

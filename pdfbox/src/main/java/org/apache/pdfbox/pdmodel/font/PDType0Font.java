@@ -400,7 +400,7 @@ public class PDType0Font extends PDFont implements PDVectorFont
                 }
                 catch (IOException ex)
                 {
-                    LOG.warn("Could not get {} UC2 map for font {}", strName, getName(), ex);
+                    LOG.warn("Could not get " + strName + " UC2 map for font " + getName(), ex);
                 }
             }
         }
@@ -541,11 +541,13 @@ public class PDType0Font extends PDFont implements PDVectorFont
         {
             return unicode;
         }
+
         // Use identity mapping if the given ToUnicode CMap doesn't provide any valid mapping
         // a predefined map shall only be used if there isn't any ToUnicode CMap
-        if (getToUnicodeCMap() != null)
+        // PDFBOX-6022: not when there's a predefined cmap
+        if (getToUnicodeCMap() != null && !isCMapPredefined)
         {
-            return Character.toString(code);
+            return Character.toString((char) code);
         }
 
         if ((isCMapPredefined || isDescendantCJK) && cMapUCS2 != null)

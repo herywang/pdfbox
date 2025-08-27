@@ -32,7 +32,7 @@ import org.apache.pdfbox.multipdf.PDFMergerUtility.AcroFormMergeMode;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.pdmodel.interactive.form.PDField;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -49,8 +49,8 @@ class MergeAcroFormsTest
     private static final File OUT_DIR = new File("target/test-output/merge/");
     private static final File TARGET_PDF_DIR = new File("target/pdfs");
 
-    @BeforeEach
-    public void setUp()
+    @BeforeAll
+    static void setUp()
     {
         OUT_DIR.mkdirs();
     }
@@ -65,11 +65,13 @@ class MergeAcroFormsTest
         File toBeMerged = new File(IN_DIR,"AcroFormForMerge.pdf");
         File pdfOutput = new File(OUT_DIR,"PDFBoxLegacyMerge-SameMerged.pdf");
         merger.setDestinationFileName(pdfOutput.getAbsolutePath());
+        assertEquals(pdfOutput.getAbsolutePath(), merger.getDestinationFileName());
         merger.addSource(toBeMerged);
-        merger.addSource(toBeMerged);
+        merger.addSource(toBeMerged.getAbsolutePath());
         merger.mergeDocuments(null);
         merger.setAcroFormMergeMode(AcroFormMergeMode.PDFBOX_LEGACY_MODE);
-        
+        assertEquals(AcroFormMergeMode.PDFBOX_LEGACY_MODE, merger.getAcroFormMergeMode());
+
         try (PDDocument compliantDocument = Loader
                 .loadPDF(new File(IN_DIR, "PDFBoxLegacyMerge-SameMerged.pdf"));
                 PDDocument toBeCompared = Loader

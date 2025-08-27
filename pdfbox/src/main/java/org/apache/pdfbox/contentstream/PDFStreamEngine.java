@@ -64,8 +64,10 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.util.Matrix;
 import org.apache.pdfbox.util.Vector;
 import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.OperatorName;
 import org.apache.pdfbox.contentstream.operator.OperatorProcessor;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 
 /**
  * Processes a PDF content stream and executes certain operations.
@@ -91,7 +93,10 @@ public abstract class PDFStreamEngine
 
     // default font, used if there isn't any font available
     private PDFont defaultFont;
-    
+
+    // false in certain cases, e.g. type3 charprocs with d1 or uncolored tiling patterns
+    private boolean shouldProcessColorOperators;
+
     /**
      * Creates a new PDFStreamEngine.
      */
@@ -194,10 +199,15 @@ public abstract class PDFStreamEngine
     protected void processSoftMask(PDTransparencyGroup group) throws IOException
     {
         saveGraphicsState();
-        Matrix softMaskCTM = getGraphicsState().getSoftMask().getInitialTransformationMatrix();
-        getGraphicsState().setCurrentTransformationMatrix(softMaskCTM);
-        getGraphicsState().setTextMatrix(new Matrix());
-        getGraphicsState().setTextLineMatrix(new Matrix());
+        PDGraphicsState graphicsState = getGraphicsState();
+        Matrix softMaskCTM = graphicsState.getSoftMask().getInitialTransformationMatrix();
+        graphicsState.setCurrentTransformationMatrix(softMaskCTM);
+        graphicsState.setTextMatrix(new Matrix());
+        graphicsState.setTextLineMatrix(new Matrix());
+        graphicsState.setNonStrokingColorSpace(PDDeviceGray.INSTANCE);
+        graphicsState.setNonStrokingColor(PDDeviceGray.INSTANCE.getInitialColor());
+        graphicsState.setStrokingColorSpace(PDDeviceGray.INSTANCE);
+        graphicsState.setStrokingColor(PDDeviceGray.INSTANCE.getInitialColor());
 
         try
         {
@@ -524,18 +534,40 @@ public abstract class PDFStreamEngine
         List<COSBase> arguments = new ArrayList<>();
         PDFStreamParser parser = new PDFStreamParser(contentStream);
         Object token = parser.parseNextToken();
-        while (token != null)
+
+        boolean isFirstOperator = true;
+        boolean oldShouldProcessColorOperators = shouldProcessColorOperators;
+        shouldProcessColorOperators = true;
+        if (contentStream instanceof PDTilingPattern &&
+            ((PDTilingPattern) contentStream).getPaintType() == PDTilingPattern.PAINT_UNCOLORED)
         {
-            if (token instanceof Operator)
+            shouldProcessColorOperators = false;
+        }
+        try
+        {
+            while (token != null)
             {
-                processOperator((Operator) token, arguments);
-                arguments.clear();
+                if (token instanceof Operator)
+                {
+                    if (isFirstOperator && contentStream instanceof PDType3CharProc && 
+                        OperatorName.TYPE3_D1.equals(((Operator) token).getName()))
+                    {
+                        shouldProcessColorOperators = false;
+                    }
+                    isFirstOperator = false;
+                    processOperator((Operator) token, arguments);
+                    arguments.clear();
+                }
+                else
+                {
+                    arguments.add((COSBase) token);
+                }
+                token = parser.parseNextToken();
             }
-            else
-            {
-                arguments.add((COSBase) token);
-            }
-            token = parser.parseNextToken();
+        }
+        finally
+        {
+            shouldProcessColorOperators = oldShouldProcessColorOperators;
         }
     }
 
@@ -921,7 +953,7 @@ public abstract class PDFStreamEngine
      *
      * @param operator The unknown operator.
      * @param operands The list of operands.
-     * @param exception the excpetion which occured when processing the operator
+     * @param exception the exception which occurred when processing the operator
      * 
      * @throws IOException if there is an error processing the operator exception
      */
@@ -1048,11 +1080,6 @@ public abstract class PDFStreamEngine
      */
     public void setLineDashPattern(COSArray array, int phase)
     {
-        if (phase < 0)
-        {
-            LOG.warn("Dash phase has negative value {}, set to 0", phase);
-            phase = 0;
-        }
         PDLineDashPattern lineDash = new PDLineDashPattern(array, phase);
         getGraphicsState().setLineDashPattern(lineDash);
     }
@@ -1148,5 +1175,28 @@ public abstract class PDFStreamEngine
         {
             LOG.error("level is {}", level);
         }
+    }
+
+    /**
+     * Tells whether color operators should be processed. To be used in some OperatorProcessor
+     * classes.
+     *
+     * @return true if color operators should be processed, false if not, e.g. in type3 charprocs
+     * with d1 or in uncolored tiling patterns.
+     */
+    public boolean isShouldProcessColorOperators()
+    {
+        return shouldProcessColorOperators;
+    }
+
+    /**
+     * Handles MP and DP operators.
+     *
+     * @param tag indicates the role or significance of the sequence
+     * @param properties optional properties
+     */
+    public void markedContentPoint(COSName tag, COSDictionary properties)
+    {
+        // overridden in subclasses
     }
 }

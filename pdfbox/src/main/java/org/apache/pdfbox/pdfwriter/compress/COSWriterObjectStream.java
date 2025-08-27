@@ -25,6 +25,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSBoolean;
@@ -50,6 +52,8 @@ import org.apache.pdfbox.pdfwriter.COSWriter;
  */
 public class COSWriterObjectStream
 {
+    private static final Logger LOG = LogManager.getLogger(COSWriterObjectStream.class);
+
     private final COSWriterCompressionPool compressionPool;
     private final List<COSObjectKey> preparedKeys = new ArrayList<>();
     private final List<COSBase> preparedObjects = new ArrayList<>();
@@ -168,10 +172,6 @@ public class COSWriterObjectStream
         {
             return;
         }
-        if (!(object instanceof COSBase))
-        {
-            throw new IOException("Error: Unknown type in object stream:" + object);
-        }
         COSBase base;
         if (object instanceof COSObject)
         {
@@ -185,6 +185,12 @@ public class COSWriterObjectStream
                 }
             }
             base = ((COSObject) object).getObject();
+            if (base == null)
+            {
+                LOG.debug("Can't dereference indirect object, writing COSNull instead {}", object);
+                writeCOSNull(output);
+                return;
+            }
         }
         else
         {
@@ -337,7 +343,10 @@ public class COSWriterObjectStream
         {
             if (entry.getValue() != null)
             {
-                writeObject(output, entry.getKey(), false);
+                // PDFBOX-5927: topLevel true to avoid having a dictionary key as an indirect object
+                // if it already exists as such
+                writeObject(output, entry.getKey(), true);
+
                 writeObject(output, entry.getValue(), false);
             }
         }
